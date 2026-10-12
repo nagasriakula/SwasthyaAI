@@ -11,6 +11,7 @@ from app.schemas.patient import (
 
 # Change this import if your auth dependency has a different filename/function
 from app.core.security import get_current_user
+from app.core.access import can_access_patient, patient_filter
 
 
 router = APIRouter()
@@ -61,7 +62,13 @@ def get_patients(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
-    patients = db.query(Patient).order_by(Patient.created_at.desc()).all()
+    # ADMIN: all. ANM: her ASHA workers' patients. ASHA: her own.
+    patients = (
+        db.query(Patient)
+        .filter(patient_filter(current_user))
+        .order_by(Patient.created_at.desc())
+        .all()
+    )
 
     return patients
 
@@ -88,6 +95,12 @@ def get_patient(
             detail="Patient not found"
         )
 
+    if not can_access_patient(db, current_user, patient):
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have access to this patient"
+        )
+
     return patient
 
 
@@ -112,6 +125,12 @@ def update_patient(
         raise HTTPException(
             status_code=404,
             detail="Patient not found"
+        )
+
+    if not can_access_patient(db, current_user, patient):
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have access to this patient"
         )
 
     update_data = patient_data.model_dump(exclude_unset=True)

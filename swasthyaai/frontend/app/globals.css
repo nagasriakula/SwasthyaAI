@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-paper font-sans text-ink antialiased;
+  }
+  :focus-visible {
+    @apply outline outline-2 outline-offset-2 outline-turmeric-500;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-[15px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply bg-neem-700 text-white hover:bg-neem-800;
+  }
+  .btn-accent {
+    @apply bg-turmeric-500 text-ink hover:bg-turmeric-600;
+  }
+  .btn-secondary {
+    @apply bg-white text-neem-800 ring-1 ring-inset ring-neem-200 hover:bg-neem-50;
+  }
+  .btn-ghost {
+    @apply text-neem-700 hover:bg-neem-50;
+  }
+  .btn-sm {
+    @apply px-3 py-1.5 text-sm;
+  }
+  .input {
+    @apply w-full rounded-lg border border-line bg-white px-3 py-2.5 text-base text-ink placeholder:text-muted/60 focus:border-neem-500 focus:outline-none focus:ring-2 focus:ring-neem-500/25;
+  }
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-ink;
+  }
+  .field-error {
+    @apply mt-1 text-sm text-risk-high;
+  }
+  .panel {
+    @apply rounded-xl bg-white ring-1 ring-line;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Printing: only the patient health card is printed, on one page */
+@media print {
+  @page {
+    margin: 12mm;
+  }
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+  }
+  body * {
+    visibility: hidden;
+  }
+  .print-card,
+  .print-card * {
+    visibility: visible;
+  }
+  .print-card {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 90mm;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

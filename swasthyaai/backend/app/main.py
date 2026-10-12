@@ -13,6 +13,8 @@ app = FastAPI(
     title="SwasthyaAI Backend",
     version="1.0.0"
 )
+from fastapi.staticfiles import StaticFiles
+app.mount("/uploads", StaticFiles(directory="uploads", check_dir=False), name="uploads")
 
 
 @app.get("/")

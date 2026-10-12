@@ -6,9 +6,10 @@ from fastapi import (
     HTTPException,
 )
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from app.core.security import get_current_user
+from app.core.access import can_access_patient, patient_id_filter
 from app.db.database import get_db
 
 from app.models.followup import FollowUp
@@ -56,23 +57,25 @@ def can_access_followup(
     user: User,
     followup: FollowUp,
 ) -> bool:
+    """
+    A follow-up follows its patient (rule in app/core/access.py).
+    A worker can also always see a follow-up assigned to her.
+    """
 
-    # ADMIN and ANM can access all follow-ups
-    if user.role in {
-        "ADMIN",
-        "ANM",
-    }:
+    if user.role == "ADMIN":
         return True
 
-    # If assigned to a specific worker,
-    # only that worker can access it.
-    if followup.assigned_to_user_id is not None:
-        return followup.assigned_to_user_id == user.id
+    if followup.assigned_to_user_id == user.id:
+        return True
 
-    # Current project Patient model does not yet
-    # have assigned_worker_id, so unassigned follow-ups
-    # remain accessible to ASHA.
-    return True
+    db = object_session(followup)
+    patient = db.get(Patient, followup.patient_id)
+
+    return patient is not None and can_access_patient(
+        db,
+        user,
+        patient,
+    )
 
 
 # ============================================================
@@ -157,6 +160,12 @@ def create_followup(
         raise HTTPException(
             status_code=404,
             detail="Patient not found.",
+        )
+
+    if not can_access_patient(db, user, patient):
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have access to this patient.",
         )
 
     # --------------------------------------------------------
@@ -347,70 +356,32 @@ def get_followups(
         FollowUp.scheduled_date.asc()
     )
 
-    # --------------------------------------------------------
-    # ADMIN / ANM
-    # --------------------------------------------------------
-
-    if user.role in {
-        "ADMIN",
-        "ANM",
-    }:
-
-        if status:
-
-            status = status.strip().upper()
-
-            if status not in VALID_STATUSES:
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "message": "Invalid status.",
-                        "allowed_statuses": sorted(
-                            VALID_STATUSES
-                        ),
-                    },
-                )
-
-            query = query.where(
-                FollowUp.status == status
-            )
-
-    # --------------------------------------------------------
-    # ASHA
-    # --------------------------------------------------------
-
-    else:
-
+    # ANM: her ASHA workers' patients. ASHA: her own patients.
+    # Anyone also sees follow-ups assigned to her.
+    if user.role != "ADMIN":
         query = query.where(
-            (
-                FollowUp.assigned_to_user_id
-                == user.id
-            )
-            |
-            (
-                FollowUp.assigned_to_user_id
-                .is_(None)
-            )
+            patient_id_filter(user, FollowUp.patient_id)
+            | (FollowUp.assigned_to_user_id == user.id)
         )
 
-        if status:
+    if status:
 
-            status = status.strip().upper()
+        status = status.strip().upper()
 
-            if status not in VALID_STATUSES:
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "message": "Invalid status.",
-                        "allowed_statuses": sorted(
-                            VALID_STATUSES
-                        ),
-                    },
-                )
-
-            query = query.where(
-                FollowUp.status == status
+        if status not in VALID_STATUSES:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": "Invalid status.",
+                    "allowed_statuses": sorted(
+                        VALID_STATUSES
+                    ),
+                },
             )
+
+        query = query.where(
+            FollowUp.status == status
+        )
 
     followups = db.scalars(
         query

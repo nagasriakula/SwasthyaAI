@@ -19,6 +19,7 @@ class UserResponse(BaseModel):
     village: str | None = None
     phone: str | None = None
     active: bool
+    anm_id: int | None = None
 
     class Config:
         from_attributes = True
@@ -31,6 +32,12 @@ class UserCreateRequest(BaseModel):
     role: str
     village: str | None = None
     phone: str | None = None
+    # Required when role is ASHA: the ANM who supervises her.
+    anm_id: int | None = None
+
+
+class UserSupervisorUpdate(BaseModel):
+    anm_id: int | None = None
 
 
 class UserStatusUpdate(BaseModel):

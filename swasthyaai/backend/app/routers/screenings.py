@@ -10,9 +10,10 @@ from fastapi import (
 )
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from app.core.security import get_current_user
+from app.core.access import can_access_patient
 from app.db.database import get_db
 
 from app.models.patient import Patient
@@ -74,30 +75,14 @@ def can_access(
     patient: Patient,
 ) -> bool:
     """
-    Determine whether the logged-in user can access
-    the patient's screening information.
+    ADMIN: all patients. ANM: patients of her ASHA workers.
+    ASHA: only patients she registered. (Rule in app/core/access.py)
     """
-
-    # ADMIN and ANM have full access
-    if user.role in {
-        "ADMIN",
-        "ANM",
-    }:
-        return True
-
-    # Future support for assigned_worker_id
-    if hasattr(
+    return can_access_patient(
+        object_session(patient),
+        user,
         patient,
-        "assigned_worker_id",
-    ):
-        return (
-            patient.assigned_worker_id == user.id
-            or patient.assigned_worker_id is None
-        )
-
-    # Current Patient model does not contain
-    # assigned_worker_id, so ASHA access is allowed.
-    return True
+    )
 
 
 # ============================================================

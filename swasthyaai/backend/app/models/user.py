@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
@@ -52,6 +52,14 @@ class User(Base):
         default=True,
         nullable=False,
         server_default="true"
+    )
+
+    # Supervising ANM of an ASHA worker (NULL for ANM and ADMIN accounts).
+    anm_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=True,
+        index=True
     )
 
     created_at: Mapped[datetime] = mapped_column(

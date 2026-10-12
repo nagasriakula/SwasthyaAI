@@ -3,12 +3,19 @@ from app.models.user import User
 from app.core.security import hash_password
 
 
-def create_user(db, name, email, password, role, village=None, phone=None):
+def create_user(db, name, email, password, role, village=None, phone=None, anm_id=None):
     existing = db.query(User).filter(User.email == email).first()
 
     if existing:
         print(f"Already exists: {email} ({existing.role})")
-        return
+
+        # Link an existing ASHA to her ANM if she has none yet
+        if anm_id is not None and existing.anm_id is None:
+            existing.anm_id = anm_id
+            db.commit()
+            print(f"  Linked {email} to ANM ID {anm_id}")
+
+        return existing
 
     user = User(
         name=name,
@@ -17,6 +24,7 @@ def create_user(db, name, email, password, role, village=None, phone=None):
         role=role,
         village=village,
         phone=phone,
+        anm_id=anm_id,
     )
 
     db.add(user)
@@ -24,11 +32,22 @@ def create_user(db, name, email, password, role, village=None, phone=None):
     db.refresh(user)
 
     print(f"Created: {email} | Role: {role} | ID: {user.id}")
+    return user
 
 
 db = SessionLocal()
 
 try:
+    anm = create_user(
+        db,
+        name="Demo ANM",
+        email="anm@swasthyaai.com",
+        password="Anm@12345",
+        role="ANM",
+        village="Demo Village",
+        phone="9000000002",
+    )
+
     create_user(
         db,
         name="Demo ASHA",
@@ -37,16 +56,7 @@ try:
         role="ASHA",
         village="Demo Village",
         phone="9000000001",
-    )
-
-    create_user(
-        db,
-        name="Demo ANM",
-        email="anm@swasthyaai.com",
-        password="Anm@12345",
-        role="ANM",
-        village="Demo Village",
-        phone="9000000002",
+        anm_id=anm.id,  # Demo ASHA works under Demo ANM
     )
 
     create_user(

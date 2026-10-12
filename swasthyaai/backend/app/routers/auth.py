@@ -12,6 +12,7 @@ from app.schemas.auth import (
     UserResponse,
     UserCreateRequest,
     UserStatusUpdate,
+    UserSupervisorUpdate,
 )
 from app.core.security import (
     verify_password,
@@ -24,6 +25,48 @@ from app.core.security import (
 router = APIRouter()
 
 bearer_scheme = HTTPBearer()
+
+
+def _user_from_token(credentials, db: Session) -> User:
+    payload = decode_access_token(credentials.credentials)
+
+    if not payload or not payload.get("sub"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
+
+    user = db.execute(
+        select(User).where(User.id == int(payload["sub"]))
+    ).scalar_one_or_none()
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found"
+        )
+
+    return user
+
+
+def _valid_anm(db: Session, anm_id: int) -> User:
+    anm = db.execute(
+        select(User).where(User.id == anm_id)
+    ).scalar_one_or_none()
+
+    if anm is None or anm.role.upper() != "ANM":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The supervising ANM was not found"
+        )
+
+    if not anm.active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The supervising ANM account is deactivated"
+        )
+
+    return anm
 
 
 # ---------------------------------------------------------
@@ -204,6 +247,24 @@ def create_user(
             detail="A user with this email already exists"
         )
 
+    # An ASHA worker must be placed under an active ANM
+    anm_id = None
+
+    if role == "ASHA":
+        if user_data.anm_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Choose the supervising ANM for this ASHA worker"
+            )
+
+        anm_id = _valid_anm(db, user_data.anm_id).id
+
+    elif user_data.anm_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only ASHA workers have a supervising ANM"
+        )
+
     # Create user
     new_user = User(
         name=user_data.name,
@@ -212,6 +273,7 @@ def create_user(
         role=role,
         village=user_data.village,
         phone=user_data.phone,
+        anm_id=anm_id,
     )
 
     db.add(new_user)
@@ -226,6 +288,7 @@ def create_user(
         details={
             "created_user_email": new_user.email,
             "created_user_role": new_user.role,
+            "anm_id": new_user.anm_id,
         },
     )
 
@@ -436,3 +499,108 @@ def update_user_status(
     db.commit()
 
     return user
+
+
+
+# ---------------------------------------------------------
+# CHANGE SUPERVISING ANM OF AN ASHA WORKER
+# PUT /api/auth/users/{user_id}/anm
+#
+# ADMIN ONLY. Her patients move with her to the new ANM.
+# ---------------------------------------------------------
+
+
+@router.put(
+    "/users/{user_id}/anm",
+    response_model=UserResponse
+)
+def update_user_anm(
+    user_id: int,
+    data: UserSupervisorUpdate,
+    credentials: HTTPAuthorizationCredentials = Depends(
+        bearer_scheme
+    ),
+    db: Session = Depends(get_db)
+):
+    admin = _user_from_token(credentials, db)
+
+    if admin.role.upper() != "ADMIN":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only ADMIN users can change the supervising ANM"
+        )
+
+    user = db.execute(
+        select(User).where(User.id == user_id)
+    ).scalar_one_or_none()
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    if user.role.upper() != "ASHA":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only ASHA workers have a supervising ANM"
+        )
+
+    previous_anm_id = user.anm_id
+    user.anm_id = (
+        _valid_anm(db, data.anm_id).id
+        if data.anm_id is not None
+        else None
+    )
+
+    db.commit()
+    db.refresh(user)
+    create_audit_log(
+        db=db,
+        action="USER_ANM_UPDATED",
+        user_id=admin.id,
+        entity_type="USER",
+        entity_id=user.id,
+        details={
+            "email": user.email,
+            "previous_anm_id": previous_anm_id,
+            "anm_id": user.anm_id,
+        },
+    )
+
+    db.commit()
+
+    return user
+
+
+# ---------------------------------------------------------
+# MY ASHA WORKERS
+# GET /api/auth/my-ashas
+#
+# ANM ONLY: the ASHA workers she supervises.
+# ---------------------------------------------------------
+
+
+@router.get(
+    "/my-ashas",
+    response_model=list[UserResponse]
+)
+def list_my_ashas(
+    credentials: HTTPAuthorizationCredentials = Depends(
+        bearer_scheme
+    ),
+    db: Session = Depends(get_db)
+):
+    user = _user_from_token(credentials, db)
+
+    if user.role.upper() != "ANM":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only ANM users have ASHA workers"
+        )
+
+    return db.execute(
+        select(User)
+        .where(User.anm_id == user.id, User.role == "ASHA")
+        .order_by(User.name)
+    ).scalars().all()

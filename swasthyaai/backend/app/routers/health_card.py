@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user
+from app.core.access import can_access_patient
 from app.db.database import get_db
 
 from app.models.health_card import HealthCard
@@ -92,6 +93,15 @@ def create_health_card(
         raise HTTPException(
             status_code=404,
             detail="Patient not found.",
+        )
+
+    if not can_access_patient(db, user, patient):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "This patient belongs to another "
+                "health worker's area."
+            ),
         )
 
     # --------------------------------------------------------
@@ -217,13 +227,14 @@ def create_health_card(
 def get_health_card(
     token: str,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """
     Retrieve a patient's health information
     using the opaque QR token.
 
-    No JWT authentication is required here because
-    the QR token itself is the access credential.
+    The scanner must be signed in and the patient must be
+    in her area (ASHA: own patients, ANM: her ASHA workers').
     """
 
     # --------------------------------------------------------
@@ -256,6 +267,15 @@ def get_health_card(
         raise HTTPException(
             status_code=404,
             detail="Patient not found.",
+        )
+
+    if not can_access_patient(db, user, patient):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "This patient belongs to another "
+                "health worker's area."
+            ),
         )
 
     # ========================================================

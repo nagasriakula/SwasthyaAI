@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user
+from app.core.access import patient_filter, patient_id_filter
 from app.db.database import get_db
 
 from app.models.followup import FollowUp
@@ -111,11 +112,21 @@ def get_anm_dashboard(
         )
 
     # ========================================================
+    # SCOPE: an ANM sees only her ASHA workers' patients
+    # (app/core/access.py). ADMIN sees everything.
+    # ========================================================
+
+    in_scope_patient = patient_filter(user)
+    in_scope_screening = patient_id_filter(user, Screening.patient_id)
+    in_scope_followup = patient_id_filter(user, FollowUp.patient_id)
+
+    # ========================================================
     # PATIENT COUNTS
     # ========================================================
 
     total_patients = db.scalar(
         select(func.count(Patient.id))
+        .where(in_scope_patient)
     ) or 0
 
     # ========================================================
@@ -124,11 +135,13 @@ def get_anm_dashboard(
 
     total_screenings = db.scalar(
         select(func.count(Screening.id))
+        .where(in_scope_screening)
     ) or 0
 
     pending_screenings = db.scalar(
         select(func.count(Screening.id))
         .where(
+            in_scope_screening,
             Screening.status == "PENDING"
         )
     ) or 0
@@ -136,6 +149,7 @@ def get_anm_dashboard(
     analyzed_screenings = db.scalar(
         select(func.count(Screening.id))
         .where(
+            in_scope_screening,
             Screening.status == "ANALYZED"
         )
     ) or 0
@@ -143,6 +157,7 @@ def get_anm_dashboard(
     quality_failed_screenings = db.scalar(
         select(func.count(Screening.id))
         .where(
+            in_scope_screening,
             Screening.status == "QUALITY_FAILED"
         )
     ) or 0
@@ -154,6 +169,7 @@ def get_anm_dashboard(
     jaundice_screenings = db.scalar(
         select(func.count(Screening.id))
         .where(
+            in_scope_screening,
             Screening.screening_type == "JAUNDICE"
         )
     ) or 0
@@ -161,6 +177,7 @@ def get_anm_dashboard(
     skin_screenings = db.scalar(
         select(func.count(Screening.id))
         .where(
+            in_scope_screening,
             Screening.screening_type == "SKIN"
         )
     ) or 0
@@ -168,6 +185,7 @@ def get_anm_dashboard(
     anemia_screenings = db.scalar(
         select(func.count(Screening.id))
         .where(
+            in_scope_screening,
             Screening.screening_type == "ANEMIA"
         )
     ) or 0
@@ -178,21 +196,36 @@ def get_anm_dashboard(
 
     high_risk_results = db.scalar(
         select(func.count(ScreeningResult.id))
+        .join(
+            Screening,
+            Screening.id == ScreeningResult.screening_id,
+        )
         .where(
+            in_scope_screening,
             ScreeningResult.risk_level == "HIGH"
         )
     ) or 0
 
     moderate_risk_results = db.scalar(
         select(func.count(ScreeningResult.id))
+        .join(
+            Screening,
+            Screening.id == ScreeningResult.screening_id,
+        )
         .where(
+            in_scope_screening,
             ScreeningResult.risk_level == "MODERATE"
         )
     ) or 0
 
     low_risk_results = db.scalar(
         select(func.count(ScreeningResult.id))
+        .join(
+            Screening,
+            Screening.id == ScreeningResult.screening_id,
+        )
         .where(
+            in_scope_screening,
             ScreeningResult.risk_level == "LOW"
         )
     ) or 0
@@ -203,6 +236,7 @@ def get_anm_dashboard(
 
     all_followups = db.scalars(
         select(FollowUp)
+        .where(in_scope_followup)
         .order_by(
             FollowUp.scheduled_date.asc()
         )
@@ -271,6 +305,7 @@ def get_anm_dashboard(
 
     recent_screenings = db.scalars(
         select(Screening)
+        .where(in_scope_screening)
         .order_by(
             Screening.created_at.desc()
         )
